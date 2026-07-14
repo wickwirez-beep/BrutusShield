@@ -131,6 +131,7 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
     val voice = remember { BrutusVoiceController(context) }
     var showArtworkSplash by rememberSaveable { mutableStateOf(true) }
     var showDeepScanDisclosure by rememberSaveable { mutableStateOf(false) }
+    var pendingMalwareScan by rememberSaveable { mutableStateOf(false) }
     var selectedTreeUri by rememberSaveable {
         mutableStateOf(prefs.getString("scan_tree_uri", null))
     }
@@ -185,14 +186,19 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
         voice.speak("Full deep scan initiated. Brutus is checking shared storage.")
     }
 
+    val startMalwareScan: () -> Unit = {
+        viewModel.runMalwareScan(context)
+        voice.speak("Malware scan initiated. Brutus is checking installed apps and executable files against offline threat rules.")
+    }
+
     val allFilesSettingsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) {
         if (StorageAccessManager.hasFullStorageAccess(context)) {
-            startFullDeepScan()
+            if (pendingMalwareScan) startMalwareScan() else startFullDeepScan()
         } else {
-            viewModel.showMessage("All Files Access was not enabled. Deep scan cannot start.")
-            voice.speak("Deep scan permission was not enabled.")
+            viewModel.showMessage("All Files Access was not enabled. The requested scan cannot start.")
+            voice.speak("Storage scan permission was not enabled.")
         }
     }
 
@@ -200,15 +206,25 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            startFullDeepScan()
+            if (pendingMalwareScan) startMalwareScan() else startFullDeepScan()
         } else {
-            viewModel.showMessage("Storage permission is required for a full deep scan.")
+            viewModel.showMessage("Storage permission is required for the requested scan.")
         }
     }
 
     val requestDeepScan: () -> Unit = {
+        pendingMalwareScan = false
         if (StorageAccessManager.hasFullStorageAccess(context)) {
             startFullDeepScan()
+        } else {
+            showDeepScanDisclosure = true
+        }
+    }
+
+    val requestMalwareScan: () -> Unit = {
+        pendingMalwareScan = true
+        if (StorageAccessManager.hasFullStorageAccess(context)) {
+            startMalwareScan()
         } else {
             showDeepScanDisclosure = true
         }
@@ -226,6 +242,7 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
         } else {
             when (parseBrutusCommand(spoken)) {
                 BrutusCommand.QUICK_SCAN -> launchFolderScan()
+                BrutusCommand.MALWARE_SCAN -> requestMalwareScan()
                 BrutusCommand.DEEP_SCAN -> requestDeepScan()
                 BrutusCommand.APP_AUDIT -> {
                     viewModel.runAppAudit(context)
@@ -242,7 +259,7 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
                     voice.speak("Scan stopped.")
                 }
                 BrutusCommand.UNKNOWN -> voice.speak(
-                    "Command not recognized. Say quick scan, deep scan, app audit, check a link, or status report."
+                    "Command not recognized. Say malware scan, folder scan, deep scan, app audit, check a link, or status report."
                 )
             }
         }
@@ -279,12 +296,19 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
     if (showDeepScanDisclosure) {
         AlertDialog(
             onDismissRequest = { showDeepScanDisclosure = false },
-            title = { Text("ENABLE TRUE DEEP SCAN", fontWeight = FontWeight.Black) },
+            title = {
+                Text(
+                    if (pendingMalwareScan) "ENABLE MALWARE SCAN" else "ENABLE TRUE DEEP SCAN",
+                    fontWeight = FontWeight.Black
+                )
+            },
             text = {
                 Text(
-                    "Brutus needs Android's All Files Access to inspect shared storage automatically. " +
-                        "This includes Downloads, Documents, APKs, archives, media folders, and readable SD-card storage. " +
-                        "Files stay on this device. Android still blocks other apps' private data and protected system areas."
+                    if (pendingMalwareScan) {
+                        "Brutus needs Android's All Files Access to check installed app packages and executable files across shared storage against offline malware signatures and behavior rules. Files remain on this device."
+                    } else {
+                        "Brutus needs Android's All Files Access to inspect shared storage automatically. This includes Downloads, Documents, APKs, archives, media folders, and readable SD-card storage. Files stay on this device. Android still blocks other apps' private data and protected system areas."
+                    }
                 )
             },
             confirmButton = {
@@ -340,6 +364,7 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
                 Screen.HOME -> HomeScreen(
                     viewModel = viewModel,
                     onQuickScan = launchFolderScan,
+                    onMalwareScan = requestMalwareScan,
                     onDeepScan = requestDeepScan,
                     onAppAudit = {
                         viewModel.runAppAudit(context)
@@ -351,8 +376,9 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
                     onAbout = { viewModel.navigate(Screen.ABOUT) }
                 )
 
-                Screen.FILE_RESULTS -> FileScanScreen(
+                Screen.FILE_RESULTS, Screen.MALWARE_RESULTS -> FileScanScreen(
                     state = viewModel.scanState,
+                    malwareMode = viewModel.screen == Screen.MALWARE_RESULTS,
                     onStop = viewModel::stopScan,
                     onQuarantine = { finding ->
                         viewModel.quarantine(context, finding) { result ->
@@ -424,6 +450,7 @@ private fun BrutusTopBar(screen: Screen, onBack: () -> Unit) {
     val title = when (screen) {
         Screen.HOME -> "BRUTUS SHIELD"
         Screen.FILE_RESULTS -> "FILE SCAN"
+        Screen.MALWARE_RESULTS -> "MALWARE SCAN"
         Screen.APP_AUDIT -> "APP AUDIT"
         Screen.APK_ANALYZER -> "APK ANALYZER"
         Screen.LINK_SCANNER -> "LINK SCANNER"
@@ -472,6 +499,7 @@ private fun BrutusTopBar(screen: Screen, onBack: () -> Unit) {
 private fun HomeScreen(
     viewModel: BrutusViewModel,
     onQuickScan: () -> Unit,
+    onMalwareScan: () -> Unit,
     onDeepScan: () -> Unit,
     onAppAudit: () -> Unit,
     onApkAnalyzer: () -> Unit,
@@ -496,6 +524,8 @@ private fun HomeScreen(
         }
         item {
             FeatureGrid(
+                onQuickScan = onQuickScan,
+                onMalwareScan = onMalwareScan,
                 onDeepScan = onDeepScan,
                 onAppAudit = onAppAudit,
                 onApkAnalyzer = onApkAnalyzer,
@@ -546,7 +576,7 @@ private fun homeStatus(viewModel: BrutusViewModel): HomeStatus {
         )
         else -> HomeStatus(
             "READY",
-            "Run a folder scan or full deep scan",
+            "Run Malware Scan for installed apps and executable threats",
             SteelSilver,
             R.drawable.status_all_clear
         )
@@ -679,6 +709,8 @@ private fun ScanOrb(isScanning: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun FeatureGrid(
+    onQuickScan: () -> Unit,
+    onMalwareScan: () -> Unit,
     onDeepScan: () -> Unit,
     onAppAudit: () -> Unit,
     onApkAnalyzer: () -> Unit,
@@ -688,16 +720,20 @@ private fun FeatureGrid(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FeatureCard("MALWARE SCAN", "Apps + executable threat rules", Icons.Default.BugReport, Modifier.weight(1f), onMalwareScan)
             FeatureCard("DEEP SCAN", "All readable shared storage", Icons.Default.Security, Modifier.weight(1f), onDeepScan)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FeatureCard("APP AUDIT", "Installed app risks", Icons.Default.Android, Modifier.weight(1f), onAppAudit)
+            FeatureCard("APK ANALYZER", "Inspect before install", Icons.Default.Analytics, Modifier.weight(1f), onApkAnalyzer)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FeatureCard("APK ANALYZER", "Inspect before install", Icons.Default.BugReport, Modifier.weight(1f), onApkAnalyzer)
             FeatureCard("LINK SCANNER", "Check URL warning signs", Icons.Default.Link, Modifier.weight(1f), onLinkScanner)
+            FeatureCard("HISTORY", "Previous activity", Icons.Default.History, Modifier.weight(1f), onHistory)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FeatureCard("HISTORY", "Previous activity", Icons.Default.History, Modifier.weight(1f), onHistory)
             FeatureCard("ABOUT", "Version and privacy", Icons.Default.Info, Modifier.weight(1f), onAbout)
+            FeatureCard("FOLDER SCAN", "Selected folder, recursive", Icons.Default.Folder, Modifier.weight(1f), onQuickScan)
         }
     }
 }
@@ -745,7 +781,7 @@ private fun HonestProtectionCard() {
             Column {
                 Text("HONEST PROTECTION", color = AllClearGreen, fontWeight = FontWeight.Bold)
                 Text(
-                    "Deep Scan checks all Android-readable shared storage using file signatures, hashes, APK manifests, filenames, install source, and permission combinations. A warning is not proof of infection.",
+                    "Malware Scan checks installed app packages and executable files using exact SHA-256 signatures, APK code strings, signing certificates, and multi-indicator behavior rules. Deep Scan separately checks all readable shared storage. A behavior warning is not proof of infection.",
                     color = BrutusWhite.copy(alpha = 0.74f),
                     fontSize = 12.sp,
                     lineHeight = 17.sp
@@ -758,19 +794,23 @@ private fun HonestProtectionCard() {
 @Composable
 private fun FileScanScreen(
     state: ScanState,
+    malwareMode: Boolean,
     onStop: () -> Unit,
     onQuarantine: (FileFinding) -> Unit
 ) {
     when (state) {
-        ScanState.Idle -> CenterMessage("Scanner ready", "Choose Folder Scan or Deep Scan from the home screen.")
+        ScanState.Idle -> CenterMessage(
+            "Scanner ready",
+            if (malwareMode) "Start Malware Scan from the home screen." else "Choose Folder Scan or Deep Scan from the home screen."
+        )
         is ScanState.Failed -> CenterMessage("Scan failed", state.message, AlertRed)
-        is ScanState.Running -> RunningScan(state, onStop)
-        is ScanState.Finished -> FinishedScan(state, onQuarantine)
+        is ScanState.Running -> RunningScan(state, malwareMode, onStop)
+        is ScanState.Finished -> FinishedScan(state, malwareMode, onQuarantine)
     }
 }
 
 @Composable
-private fun RunningScan(state: ScanState.Running, onStop: () -> Unit) {
+private fun RunningScan(state: ScanState.Running, malwareMode: Boolean, onStop: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -792,7 +832,16 @@ private fun RunningScan(state: ScanState.Running, onStop: () -> Unit) {
         )
         Spacer(Modifier.height(18.dp))
         Text("${state.scannedCount}", fontSize = 42.sp, fontWeight = FontWeight.Black)
-        Text(if (state.deep) "FULL STORAGE FILES CHECKED" else "FILES CHECKED", color = BrutusRed, letterSpacing = 1.2.sp, fontSize = 11.sp)
+        Text(
+            when {
+                malwareMode -> "FILES + INSTALLED APPS CHECKED"
+                state.deep -> "FULL STORAGE FILES CHECKED"
+                else -> "FILES CHECKED"
+            },
+            color = BrutusRed,
+            letterSpacing = 1.2.sp,
+            fontSize = 11.sp
+        )
         Spacer(Modifier.height(12.dp))
         Text(
             state.currentName,
@@ -815,20 +864,28 @@ private fun RunningScan(state: ScanState.Running, onStop: () -> Unit) {
 }
 
 @Composable
-private fun FinishedScan(state: ScanState.Finished, onQuarantine: (FileFinding) -> Unit) {
+private fun FinishedScan(
+    state: ScanState.Finished,
+    malwareMode: Boolean,
+    onQuarantine: (FileFinding) -> Unit
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            SummaryCard(state)
+            SummaryCard(state, malwareMode)
         }
         if (state.findings.isEmpty()) {
             item {
                 CenterMessage(
                     title = "ALL CLEAR",
-                    detail = "No local warning signs were found in the scanned storage.",
+                    detail = if (malwareMode) {
+                        "No exact malware signature or high-confidence behavior rule matched the scanned apps and files."
+                    } else {
+                        "No local warning signs were found in the scanned storage."
+                    },
                     color = AllClearGreen
                 )
             }
@@ -841,7 +898,7 @@ private fun FinishedScan(state: ScanState.Finished, onQuarantine: (FileFinding) 
 }
 
 @Composable
-private fun SummaryCard(state: ScanState.Finished) {
+private fun SummaryCard(state: ScanState.Finished, malwareMode: Boolean) {
     val risk = when {
         state.summary.dangerousCount > 0 -> RiskLevel.DANGEROUS
         state.summary.flaggedCount > 0 -> RiskLevel.CAUTION
@@ -852,7 +909,12 @@ private fun SummaryCard(state: ScanState.Finished) {
         modifier = Modifier.border(1.dp, riskColor(risk).copy(alpha = 0.5f), RoundedCornerShape(16.dp))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("SCAN COMPLETE", color = riskColor(risk), fontWeight = FontWeight.Black, fontSize = 21.sp)
+            Text(
+                if (malwareMode) "MALWARE SCAN COMPLETE" else "SCAN COMPLETE",
+                color = riskColor(risk),
+                fontWeight = FontWeight.Black,
+                fontSize = 21.sp
+            )
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Stat("CHECKED", state.summary.scannedCount.toString())
@@ -885,7 +947,8 @@ private fun FileFindingCard(finding: FileFinding, onQuarantine: (FileFinding) ->
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(finding.name, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text("${finding.riskLevel.displayName} • ${formatBytes(finding.sizeBytes)}", color = riskColor(finding.riskLevel), fontSize = 11.sp)
+                    Text("${finding.sourceLabel} • ${finding.riskLevel.displayName} • ${formatBytes(finding.sizeBytes)}", color = riskColor(finding.riskLevel), fontSize = 11.sp)
+                    finding.threatName?.let { Text(it, color = AlertRed, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
                 }
             }
             Spacer(Modifier.height(10.dp))
@@ -897,15 +960,24 @@ private fun FileFindingCard(finding: FileFinding, onQuarantine: (FileFinding) ->
                 Text("SHA-256", color = BrutusRed, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Text(hash, color = SteelSilver, fontSize = 9.sp, lineHeight = 12.sp)
             }
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = { onQuarantine(finding) },
-                colors = ButtonDefaults.buttonColors(containerColor = BrutusRed),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Shield, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("QUARANTINE")
+            finding.ruleDatabaseVersion?.let {
+                Spacer(Modifier.height(8.dp))
+                Text("RULE DATABASE $it", color = SteelSilver, fontSize = 9.sp)
+            }
+            if (finding.canQuarantine) {
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { onQuarantine(finding) },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrutusRed),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Shield, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("QUARANTINE")
+                }
+            } else {
+                Spacer(Modifier.height(10.dp))
+                Text("Use APP AUDIT or Android app settings to uninstall or disable this installed app.", color = SteelSilver, fontSize = 11.sp)
             }
         }
     }
@@ -1026,11 +1098,18 @@ private fun ApkAnalysisCard(analysis: ApkAnalysis) {
             Text(analysis.appName, fontWeight = FontWeight.Bold, fontSize = 20.sp)
             Text(analysis.packageName, color = SteelSilver, fontSize = 11.sp)
             Text("Version ${analysis.versionName} • Score ${analysis.score}", color = BrutusWhite.copy(alpha = 0.75f), fontSize = 12.sp)
+            analysis.matchedThreat?.let { Text("SIGNATURE MATCH: $it", color = AlertRed, fontWeight = FontWeight.Black, fontSize = 12.sp) }
+            analysis.ruleDatabaseVersion?.let { Text("Rule database $it", color = SteelSilver, fontSize = 10.sp) }
             Spacer(Modifier.height(12.dp))
             analysis.reasons.forEach { Text("• $it", fontSize = 12.sp, lineHeight = 17.sp) }
             HorizontalDivider(Modifier.padding(vertical = 14.dp), color = Color.White.copy(alpha = 0.1f))
             Text("SHA-256", color = BrutusRed, fontWeight = FontWeight.Bold, fontSize = 11.sp)
             Text(analysis.sha256, color = SteelSilver, fontSize = 10.sp, lineHeight = 14.sp)
+            if (analysis.signerSha256.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                Text("SIGNING CERTIFICATE SHA-256", color = BrutusRed, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                analysis.signerSha256.take(2).forEach { Text(it, color = SteelSilver, fontSize = 9.sp, lineHeight = 13.sp) }
+            }
             Spacer(Modifier.height(12.dp))
             Text("REQUESTED PERMISSIONS (${analysis.requestedPermissions.size})", color = BrutusRed, fontWeight = FontWeight.Bold, fontSize = 11.sp)
             analysis.requestedPermissions.take(20).forEach {
@@ -1143,16 +1222,16 @@ private fun AboutScreen() {
             contentScale = ContentScale.Fit
         )
         Text("BRUTUS SHIELD", fontWeight = FontWeight.Black, fontSize = 29.sp, letterSpacing = 1.4.sp)
-        Text("VERSION 0.2.0 • TRUE DEEP SCAN", color = BrutusRed, fontSize = 11.sp, letterSpacing = 1.2.sp)
+        Text("VERSION 0.3.0 • OFFLINE MALWARE ENGINE", color = BrutusRed, fontSize = 11.sp, letterSpacing = 1.2.sp)
         Spacer(Modifier.height(20.dp))
         InfoCard(
             "BUILT AND DESIGNED BY HUGH MONGUS",
-            "A native Android security utility with local file analysis, installed-app auditing, APK inspection, link heuristics, quarantine assistance, spoken reports, and hands-free commands."
+            "A native Android security utility with exact malware hashes, YARA-inspired multi-indicator rules, APK code inspection, signing-certificate comparison, installed-app auditing, deep storage scanning, quarantine assistance, spoken reports, and hands-free commands."
         )
         Spacer(Modifier.height(12.dp))
         InfoCard(
             "PRIVACY FIRST",
-            "Brutus Shield does not upload scanned files or links in this version. Speech recognition behavior depends on the recognition service configured on the device."
+            "Brutus Shield does not upload scanned files, APKs, hashes, or links in this version. The bundled starter rule database works offline. Speech recognition behavior depends on the recognition service configured on the device."
         )
         Spacer(Modifier.height(12.dp))
         InfoCard(

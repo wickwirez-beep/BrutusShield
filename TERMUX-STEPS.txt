@@ -1,12 +1,13 @@
-BRUTUS SHIELD v0.2.0 — UPDATE EXISTING GITHUB PROJECT
+BRUTUS SHIELD v0.3.0 — UPDATE EXISTING GITHUB PROJECT
 
-1. Download BrutusShield_v0.2.0_Update.zip into Android Downloads.
+1. Download BrutusShield_v0.3.0_Update.zip into Android Downloads.
 2. In Termux run:
 
 cd ~/BrutusShield/BrutusShield
-unzip -o ~/storage/downloads/BrutusShield_v0.2.0_Update.zip -d .
+UPDATE=$(ls -t ~/storage/downloads/BrutusShield_v0.3.0_Update*.zip | head -n 1)
+unzip -o "$UPDATE" -d .
 git add .
-git commit -m "Brutus Shield v0.2.0 true deep scan"
+git commit -m "Brutus Shield v0.3.0 offline malware engine"
 git push
 
 3. Watch the cloud build:
@@ -16,6 +17,6 @@ gh run watch "$RUN_ID" --exit-status
 
 4. Download the finished APK:
 
-mkdir -p ~/storage/downloads/BrutusShield-v0.2.0
-gh run download "$RUN_ID" -n BrutusShield-v0.2.0-debug -D ~/storage/downloads/BrutusShield-v0.2.0
-termux-open ~/storage/downloads/BrutusShield-v0.2.0/BrutusShield-v0.2.0-debug.apk
+mkdir -p ~/storage/downloads/BrutusShield-v0.3.0
+gh run download "$RUN_ID" -n BrutusShield-v0.3.0-debug -D ~/storage/downloads/BrutusShield-v0.3.0
+termux-open ~/storage/downloads/BrutusShield-v0.3.0/BrutusShield-v0.3.0-debug.apk

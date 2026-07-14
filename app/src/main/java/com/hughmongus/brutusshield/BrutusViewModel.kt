@@ -20,6 +20,7 @@ import com.hughmongus.brutusshield.security.ApkAnalyzerEngine
 import com.hughmongus.brutusshield.security.AppAuditEngine
 import com.hughmongus.brutusshield.security.FileSecurityEngine
 import com.hughmongus.brutusshield.security.LinkAnalyzerEngine
+import com.hughmongus.brutusshield.security.MalwareScanEngine
 import com.hughmongus.brutusshield.security.QuarantineResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -110,6 +111,46 @@ class BrutusViewModel : ViewModel() {
                 bannerMessage = "Scan stopped."
             } catch (error: Throwable) {
                 scanState = ScanState.Failed(error.message ?: "The scan could not be completed.")
+            }
+        }
+    }
+
+
+    fun runMalwareScan(context: Context) {
+        scanJob?.cancel()
+        scanJob = viewModelScope.launch {
+            val started = System.currentTimeMillis()
+            scanState = ScanState.Running(0, "Loading offline malware signatures", true)
+            screen = Screen.MALWARE_RESULTS
+
+            try {
+                val (count, findings) = MalwareScanEngine.scanDevice(
+                    context = context,
+                    onProgress = { scanned, name ->
+                        scanState = ScanState.Running(scanned, name, true)
+                    }
+                )
+                val summary = ScanSummary(
+                    scannedCount = count,
+                    flaggedCount = findings.size,
+                    dangerousCount = findings.count { it.riskLevel == RiskLevel.DANGEROUS },
+                    elapsedMillis = System.currentTimeMillis() - started
+                )
+                scanState = ScanState.Finished(summary, findings)
+                addHistory(
+                    title = "Malware scan",
+                    detail = "$count files and installed apps checked, ${findings.size} findings",
+                    risk = when {
+                        summary.dangerousCount > 0 -> RiskLevel.DANGEROUS
+                        summary.flaggedCount > 0 -> RiskLevel.CAUTION
+                        else -> RiskLevel.CLEAR
+                    }
+                )
+            } catch (_: CancellationException) {
+                scanState = ScanState.Idle
+                bannerMessage = "Malware scan stopped."
+            } catch (error: Throwable) {
+                scanState = ScanState.Failed(error.message ?: "The malware scan could not be completed.")
             }
         }
     }
@@ -223,6 +264,11 @@ class BrutusViewModel : ViewModel() {
     }
 
     fun quarantine(context: Context, finding: FileFinding, onComplete: (QuarantineResult?) -> Unit) {
+        if (!finding.canQuarantine) {
+            bannerMessage = "Installed apps cannot be quarantined as files. Open app settings to uninstall or disable them."
+            onComplete(null)
+            return
+        }
         viewModelScope.launch {
             try {
                 val result = FileSecurityEngine.quarantine(context, finding)
@@ -256,7 +302,7 @@ class BrutusViewModel : ViewModel() {
         return when {
             scan is ScanState.Running -> "Scan in progress. ${scan.scannedCount} files checked so far."
             scan is ScanState.Finished && scan.summary.dangerousCount > 0 ->
-                "Security alert. ${scan.summary.dangerousCount} dangerous file warnings require review."
+                "Security alert. ${scan.summary.dangerousCount} dangerous malware or file warnings require review."
             scan is ScanState.Finished && scan.summary.flaggedCount > 0 ->
                 "Scan complete. ${scan.summary.flaggedCount} items need your review."
             appFindings.any { it.riskLevel == RiskLevel.DANGEROUS } ->

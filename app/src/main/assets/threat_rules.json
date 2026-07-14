@@ -1,0 +1,93 @@
+{
+  "databaseVersion": "2026.07.14.1",
+  "updatedUtc": "2026-07-14T23:55:00Z",
+  "description": "Brutus Shield starter offline Android malware rule database. Exact hashes are sourced from public MalwareBazaar records; behavior rules are generic indicators and are not family verdicts.",
+  "knownHashes": [
+    {
+      "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+      "name": "EICAR antivirus test file",
+      "category": "TEST",
+      "reference": "https://www.eicar.org/download-anti-malware-testfile/"
+    },
+    {
+      "sha256": "6461851c092d0074150e4e56a146108ae82130c22580fb444c1444e7d936e0b5",
+      "name": "Android/IRATA",
+      "category": "MALWARE",
+      "reference": "https://bazaar.abuse.ch/sample/6461851c092d0074150e4e56a146108ae82130c22580fb444c1444e7d936e0b5/"
+    },
+    {
+      "sha256": "801f956057aa608c7393b2fcca9b731c610c6bd5e14f4f3c1d64e8f211828319",
+      "name": "Android/Crocodilus",
+      "category": "MALWARE",
+      "reference": "https://bazaar.abuse.ch/sample/801f956057aa608c7393b2fcca9b731c610c6bd5e14f4f3c1d64e8f211828319/"
+    },
+    {
+      "sha256": "2cb003e84f12842e0b9b69187cf7e8287906882d2a37fe58751c72688d896c67",
+      "name": "Android/Coper",
+      "category": "MALWARE",
+      "reference": "https://bazaar.abuse.ch/sample/2cb003e84f12842e0b9b69187cf7e8287906882d2a37fe58751c72688d896c67/"
+    },
+    {
+      "sha256": "8f62b5b52cfa7681282abf1bf91ea5a6f6b819b7e9cab717e67ac664b404fdfd",
+      "name": "Android/Joker",
+      "category": "MALWARE",
+      "reference": "https://bazaar.abuse.ch/sample/8f62b5b52cfa7681282abf1bf91ea5a6f6b819b7e9cab717e67ac664b404fdfd/"
+    }
+  ],
+  "behaviorRules": [
+    {
+      "id": "banking_overlay_accessibility",
+      "name": "Banking-trojan style overlay control",
+      "score": 13,
+      "all": ["service:accessibility", "perm:system_alert_window"],
+      "any": ["perm:read_sms", "perm:receive_sms", "perm:send_sms", "perm:read_contacts", "api:notification_listener"],
+      "minimumAny": 2,
+      "reason": "Accessibility control and screen overlays appear together with communication or identity access often abused by credential-stealing malware."
+    },
+    {
+      "id": "dynamic_dropper",
+      "name": "Dynamic-code dropper behavior",
+      "score": 12,
+      "all": ["perm:request_install_packages", "api:dex_class_loader"],
+      "any": ["api:runtime_exec", "network:cleartext_http", "network:raw_ip", "perm:receive_boot_completed"],
+      "minimumAny": 2,
+      "reason": "The package can install apps and load code dynamically, with additional execution, network, or persistence indicators."
+    },
+    {
+      "id": "surveillance_bundle",
+      "name": "Surveillance/spyware permission bundle",
+      "score": 10,
+      "all": ["perm:record_audio", "perm:receive_boot_completed"],
+      "any": ["perm:camera", "perm:fine_location", "perm:read_contacts", "perm:read_sms", "service:accessibility"],
+      "minimumAny": 3,
+      "reason": "Persistent microphone access is combined with several high-value surveillance permissions."
+    },
+    {
+      "id": "fake_update_signature_mismatch",
+      "name": "Installed-app signature mismatch",
+      "score": 18,
+      "all": ["package:signer_mismatch"],
+      "any": [],
+      "minimumAny": 0,
+      "reason": "An APK claims an installed package name but is signed by a different certificate, so it cannot be a legitimate update from the same publisher."
+    },
+    {
+      "id": "ransomware_style_control",
+      "name": "Ransomware-style device control",
+      "score": 10,
+      "all": ["api:device_policy", "api:crypto"],
+      "any": ["api:file_delete", "api:runtime_exec", "perm:receive_boot_completed", "perm:system_alert_window"],
+      "minimumAny": 2,
+      "reason": "Device administration and cryptography are combined with persistence or destructive file-control indicators."
+    },
+    {
+      "id": "sms_fraud_bundle",
+      "name": "SMS fraud behavior bundle",
+      "score": 9,
+      "all": ["perm:send_sms"],
+      "any": ["perm:read_sms", "perm:receive_sms", "perm:read_phone_state", "perm:receive_boot_completed", "api:dex_class_loader"],
+      "minimumAny": 3,
+      "reason": "SMS sending is combined with interception, device identity, persistence, or dynamically loaded code."
+    }
+  ]
+}

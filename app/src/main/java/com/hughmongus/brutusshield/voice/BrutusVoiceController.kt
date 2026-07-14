@@ -35,6 +35,7 @@ class BrutusVoiceController(context: Context) : TextToSpeech.OnInitListener {
 
 enum class BrutusCommand {
     QUICK_SCAN,
+    MALWARE_SCAN,
     DEEP_SCAN,
     APP_AUDIT,
     APK_ANALYZER,
@@ -48,8 +49,9 @@ fun parseBrutusCommand(spokenText: String): BrutusCommand {
     val text = spokenText.lowercase(Locale.US)
     return when {
         "stop" in text && "scan" in text -> BrutusCommand.STOP_SCAN
-        "deep scan" in text || "full scan" in text -> BrutusCommand.DEEP_SCAN
-        "quick scan" in text || "scan my phone" in text || "scan the phone" in text -> BrutusCommand.QUICK_SCAN
+        "malware scan" in text || "virus scan" in text || "scan my phone" in text || "scan the phone" in text -> BrutusCommand.MALWARE_SCAN
+        "deep scan" in text || "full storage scan" in text -> BrutusCommand.DEEP_SCAN
+        "quick scan" in text || "folder scan" in text -> BrutusCommand.QUICK_SCAN
         "suspicious app" in text || "app audit" in text || "audit apps" in text -> BrutusCommand.APP_AUDIT
         "scan this file" in text || "analyze apk" in text || "apk analyzer" in text -> BrutusCommand.APK_ANALYZER
         "check this link" in text || "link scanner" in text || "scan a link" in text -> BrutusCommand.LINK_SCANNER

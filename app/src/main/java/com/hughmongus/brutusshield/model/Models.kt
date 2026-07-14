@@ -5,6 +5,7 @@ import android.net.Uri
 enum class Screen {
     HOME,
     FILE_RESULTS,
+    MALWARE_RESULTS,
     APP_AUDIT,
     APK_ANALYZER,
     LINK_SCANNER,
@@ -25,7 +26,11 @@ data class FileFinding(
     val sizeBytes: Long,
     val riskLevel: RiskLevel,
     val reasons: List<String>,
-    val sha256: String? = null
+    val sha256: String? = null,
+    val canQuarantine: Boolean = true,
+    val sourceLabel: String = "FILE",
+    val threatName: String? = null,
+    val ruleDatabaseVersion: String? = null
 )
 
 data class AppFinding(
@@ -47,7 +52,10 @@ data class ApkAnalysis(
     val riskLevel: RiskLevel,
     val score: Int,
     val reasons: List<String>,
-    val requestedPermissions: List<String>
+    val requestedPermissions: List<String>,
+    val signerSha256: List<String> = emptyList(),
+    val matchedThreat: String? = null,
+    val ruleDatabaseVersion: String? = null
 )
 
 data class LinkAnalysis(

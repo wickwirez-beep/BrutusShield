@@ -1,8 +1,8 @@
-# BRUTUS SHIELD v0.2.0
+# BRUTUS SHIELD v0.3.0
 
 Native Android virus and malware **risk scanner** with Brutus voice integration.
 
-## v0.2.0 features
+## v0.3.0 features
 
 - True deep scan of Android-readable shared storage after the user enables **All Files Access**
 - Automatic traversal of Downloads, Documents, media folders, readable SD-card storage, and other shared folders
@@ -19,7 +19,7 @@ Native Android virus and malware **risk scanner** with Brutus voice integration.
 
 ## Voice commands
 
-- “Brutus, scan my phone.” — opens the remembered folder scan
+- “Brutus, scan my phone.” — runs the offline malware scan
 - “Run a deep scan.” — scans Android-readable shared storage
 - “Show suspicious apps.”
 - “Analyze APK.”
@@ -31,7 +31,7 @@ Native Android virus and malware **risk scanner** with Brutus voice integration.
 
 Brutus Shield reports **risk indicators**, not laboratory-confirmed malware. On Android 11 and newer, the full deep scan requires the user to enable **Allow access to manage all files** in Android settings. Android still blocks other apps' private sandboxes, protected system partitions, and some protected `Android/data` and `Android/obb` content unless the phone is rooted.
 
-Files and links are not uploaded in v0.2.0. Scanning and hashing happen locally. The configured Android speech-recognition service may process voice commands according to that service's privacy behavior.
+Files and links are not uploaded in v0.3.0. Scanning and hashing happen locally. The configured Android speech-recognition service may process voice commands according to that service's privacy behavior.
 
 ## Build the APK from a phone using GitHub Actions
 
@@ -40,8 +40,8 @@ This repository includes `.github/workflows/build-apk.yml`. Push the source to G
 1. Open the repository's **Actions** tab.
 2. Open **Build Brutus Shield APK**.
 3. Open the newest successful run.
-4. Download the `BrutusShield-v0.2.0-debug` artifact.
-5. Extract it and install `BrutusShield-v0.2.0-debug.apk`.
+4. Download the `BrutusShield-v0.3.0-debug` artifact.
+5. Extract it and install `BrutusShield-v0.3.0-debug.apk`.
 
 ## Toolchain
 
@@ -55,3 +55,19 @@ This repository includes `.github/workflows/build-apk.yml`. Push the source to G
 ## Credits
 
 Built and designed by **Hugh Mongus**.
+
+## v0.3.0 offline malware engine
+
+The Malware Scan is separate from Deep Scan. It checks user-installed app packages plus executable/installable files in Android-readable shared storage. The engine includes:
+
+- exact SHA-256 signature matching against the bundled starter database
+- EICAR test-file detection
+- APK DEX/native/assets string inspection using YARA-inspired multi-indicator rules
+- risky permission/service combinations
+- installed-package signing-certificate mismatch detection for fake updates
+- signer SHA-256 fingerprints
+- dynamic-code, overlay/accessibility, spyware, SMS-fraud, and ransomware-style behavior rules
+
+A behavior-rule match is evidence for review, not proof of infection. Exact hash matches are stronger but the bundled database is intentionally small and must grow over time.
+
+The v0.3.0 database is bundled with the APK and does not update itself yet. A signed rule-import/update system is planned for a later milestone.
