@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -59,6 +60,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -112,6 +114,7 @@ import com.hughmongus.brutusshield.model.LinkAnalysis
 import com.hughmongus.brutusshield.model.RiskLevel
 import com.hughmongus.brutusshield.model.ScanState
 import com.hughmongus.brutusshield.model.Screen
+import com.hughmongus.brutusshield.security.StorageAccessManager
 import com.hughmongus.brutusshield.voice.BrutusCommand
 import com.hughmongus.brutusshield.voice.BrutusVoiceController
 import com.hughmongus.brutusshield.voice.parseBrutusCommand
@@ -127,7 +130,7 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
     val prefs = remember { context.getSharedPreferences("brutus_shield", Activity.MODE_PRIVATE) }
     val voice = remember { BrutusVoiceController(context) }
     var showArtworkSplash by rememberSaveable { mutableStateOf(true) }
-    var pendingDeepScan by rememberSaveable { mutableStateOf(false) }
+    var showDeepScanDisclosure by rememberSaveable { mutableStateOf(false) }
     var selectedTreeUri by rememberSaveable {
         mutableStateOf(prefs.getString("scan_tree_uri", null))
     }
@@ -153,8 +156,8 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
             }
             selectedTreeUri = uri.toString()
             prefs.edit().putString("scan_tree_uri", uri.toString()).apply()
-            viewModel.runFileScan(context, uri, pendingDeepScan)
-            voice.speak(if (pendingDeepScan) "Deep scan initiated." else "Quick scan initiated.")
+            viewModel.runFileScan(context, uri, true)
+            voice.speak("Recursive folder scan initiated.")
         }
     }
 
@@ -167,14 +170,47 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
         }
     }
 
-    val launchScan: (Boolean) -> Unit = { deep ->
-        pendingDeepScan = deep
+    val launchFolderScan: () -> Unit = {
         val uri = selectedTreeUri?.let(Uri::parse)
         if (uri == null) {
             folderLauncher.launch(null)
         } else {
-            viewModel.runFileScan(context, uri, deep)
-            voice.speak(if (deep) "Deep scan initiated." else "Quick scan initiated.")
+            viewModel.runFileScan(context, uri, true)
+            voice.speak("Recursive folder scan initiated.")
+        }
+    }
+
+    val startFullDeepScan: () -> Unit = {
+        viewModel.runDeepScan(context)
+        voice.speak("Full deep scan initiated. Brutus is checking shared storage.")
+    }
+
+    val allFilesSettingsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (StorageAccessManager.hasFullStorageAccess(context)) {
+            startFullDeepScan()
+        } else {
+            viewModel.showMessage("All Files Access was not enabled. Deep scan cannot start.")
+            voice.speak("Deep scan permission was not enabled.")
+        }
+    }
+
+    val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startFullDeepScan()
+        } else {
+            viewModel.showMessage("Storage permission is required for a full deep scan.")
+        }
+    }
+
+    val requestDeepScan: () -> Unit = {
+        if (StorageAccessManager.hasFullStorageAccess(context)) {
+            startFullDeepScan()
+        } else {
+            showDeepScanDisclosure = true
         }
     }
 
@@ -189,8 +225,8 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
             voice.speak("I did not catch that command.")
         } else {
             when (parseBrutusCommand(spoken)) {
-                BrutusCommand.QUICK_SCAN -> launchScan(false)
-                BrutusCommand.DEEP_SCAN -> launchScan(true)
+                BrutusCommand.QUICK_SCAN -> launchFolderScan()
+                BrutusCommand.DEEP_SCAN -> requestDeepScan()
                 BrutusCommand.APP_AUDIT -> {
                     viewModel.runAppAudit(context)
                     voice.speak("Installed app audit initiated.")
@@ -240,6 +276,45 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
         return
     }
 
+    if (showDeepScanDisclosure) {
+        AlertDialog(
+            onDismissRequest = { showDeepScanDisclosure = false },
+            title = { Text("ENABLE TRUE DEEP SCAN", fontWeight = FontWeight.Black) },
+            text = {
+                Text(
+                    "Brutus needs Android's All Files Access to inspect shared storage automatically. " +
+                        "This includes Downloads, Documents, APKs, archives, media folders, and readable SD-card storage. " +
+                        "Files stay on this device. Android still blocks other apps' private data and protected system areas."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeepScanDisclosure = false
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            runCatching {
+                                allFilesSettingsLauncher.launch(
+                                    StorageAccessManager.createSettingsIntent(context)
+                                )
+                            }.onFailure {
+                                context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                            }
+                        } else {
+                            legacyStoragePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrutusRed)
+                ) { Text("OPEN ANDROID SETTINGS") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeepScanDisclosure = false }) { Text("NOT NOW") }
+            },
+            containerColor = BrutusPanelRaised,
+            titleContentColor = BrutusWhite,
+            textContentColor = BrutusWhite.copy(alpha = 0.78f)
+        )
+    }
+
     Scaffold(
         containerColor = BrutusBlack,
         topBar = {
@@ -264,8 +339,8 @@ fun BrutusShieldApp(viewModel: BrutusViewModel = viewModel()) {
             when (viewModel.screen) {
                 Screen.HOME -> HomeScreen(
                     viewModel = viewModel,
-                    onQuickScan = { launchScan(false) },
-                    onDeepScan = { launchScan(true) },
+                    onQuickScan = launchFolderScan,
+                    onDeepScan = requestDeepScan,
                     onAppAudit = {
                         viewModel.runAppAudit(context)
                         voice.speak("Installed app audit initiated.")
@@ -463,10 +538,16 @@ private fun homeStatus(viewModel: BrutusViewModel): HomeStatus {
             CautionGold,
             R.drawable.status_caution
         )
-        else -> HomeStatus(
-            "PROTECTED",
-            "Brutus is standing guard",
+        scan is ScanState.Finished -> HomeStatus(
+            "ALL CLEAR",
+            "Last scan found no local warning signs",
             AllClearGreen,
+            R.drawable.status_all_clear
+        )
+        else -> HomeStatus(
+            "READY",
+            "Run a folder scan or full deep scan",
+            SteelSilver,
             R.drawable.status_all_clear
         )
     }
@@ -587,7 +668,7 @@ private fun ScanOrb(isScanning: Boolean, onClick: () -> Unit) {
                 letterSpacing = 1.4.sp
             )
             Text(
-                if (isScanning) "BRUTUS IS WORKING" else "TAP FOR QUICK SCAN",
+                if (isScanning) "BRUTUS IS WORKING" else "TAP FOR FOLDER SCAN",
                 color = BrutusRed,
                 fontSize = 10.sp,
                 letterSpacing = 1.2.sp
@@ -607,7 +688,7 @@ private fun FeatureGrid(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FeatureCard("DEEP SCAN", "Chosen folder, recursive", Icons.Default.Folder, Modifier.weight(1f), onDeepScan)
+            FeatureCard("DEEP SCAN", "All readable shared storage", Icons.Default.Security, Modifier.weight(1f), onDeepScan)
             FeatureCard("APP AUDIT", "Installed app risks", Icons.Default.Android, Modifier.weight(1f), onAppAudit)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -664,7 +745,7 @@ private fun HonestProtectionCard() {
             Column {
                 Text("HONEST PROTECTION", color = AllClearGreen, fontWeight = FontWeight.Bold)
                 Text(
-                    "Warnings are based on visible file traits, APK manifests, install source, and permission combinations. A warning is not proof of infection.",
+                    "Deep Scan checks all Android-readable shared storage using file signatures, hashes, APK manifests, filenames, install source, and permission combinations. A warning is not proof of infection.",
                     color = BrutusWhite.copy(alpha = 0.74f),
                     fontSize = 12.sp,
                     lineHeight = 17.sp
@@ -681,7 +762,7 @@ private fun FileScanScreen(
     onQuarantine: (FileFinding) -> Unit
 ) {
     when (state) {
-        ScanState.Idle -> CenterMessage("Scanner ready", "Choose Quick Scan or Deep Scan from the home screen.")
+        ScanState.Idle -> CenterMessage("Scanner ready", "Choose Folder Scan or Deep Scan from the home screen.")
         is ScanState.Failed -> CenterMessage("Scan failed", state.message, AlertRed)
         is ScanState.Running -> RunningScan(state, onStop)
         is ScanState.Finished -> FinishedScan(state, onQuarantine)
@@ -711,7 +792,7 @@ private fun RunningScan(state: ScanState.Running, onStop: () -> Unit) {
         )
         Spacer(Modifier.height(18.dp))
         Text("${state.scannedCount}", fontSize = 42.sp, fontWeight = FontWeight.Black)
-        Text("FILES CHECKED", color = BrutusRed, letterSpacing = 1.2.sp, fontSize = 11.sp)
+        Text(if (state.deep) "FULL STORAGE FILES CHECKED" else "FILES CHECKED", color = BrutusRed, letterSpacing = 1.2.sp, fontSize = 11.sp)
         Spacer(Modifier.height(12.dp))
         Text(
             state.currentName,
@@ -747,7 +828,7 @@ private fun FinishedScan(state: ScanState.Finished, onQuarantine: (FileFinding) 
             item {
                 CenterMessage(
                     title = "ALL CLEAR",
-                    detail = "No local warning signs were found in the selected folder.",
+                    detail = "No local warning signs were found in the scanned storage.",
                     color = AllClearGreen
                 )
             }
@@ -810,6 +891,11 @@ private fun FileFindingCard(finding: FileFinding, onQuarantine: (FileFinding) ->
             Spacer(Modifier.height(10.dp))
             finding.reasons.forEach { reason ->
                 Text("• $reason", color = BrutusWhite.copy(alpha = 0.76f), fontSize = 12.sp, lineHeight = 17.sp)
+            }
+            finding.sha256?.let { hash ->
+                Spacer(Modifier.height(8.dp))
+                Text("SHA-256", color = BrutusRed, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(hash, color = SteelSilver, fontSize = 9.sp, lineHeight = 12.sp)
             }
             Spacer(Modifier.height(12.dp))
             Button(
@@ -1057,7 +1143,7 @@ private fun AboutScreen() {
             contentScale = ContentScale.Fit
         )
         Text("BRUTUS SHIELD", fontWeight = FontWeight.Black, fontSize = 29.sp, letterSpacing = 1.4.sp)
-        Text("VERSION 0.1.0 • MVP", color = BrutusRed, fontSize = 11.sp, letterSpacing = 1.2.sp)
+        Text("VERSION 0.2.0 • TRUE DEEP SCAN", color = BrutusRed, fontSize = 11.sp, letterSpacing = 1.2.sp)
         Spacer(Modifier.height(20.dp))
         InfoCard(
             "BUILT AND DESIGNED BY HUGH MONGUS",

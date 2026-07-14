@@ -77,7 +77,7 @@ class BrutusViewModel : ViewModel() {
         scanJob?.cancel()
         scanJob = viewModelScope.launch {
             val started = System.currentTimeMillis()
-            scanState = ScanState.Running(0, "Preparing scanner", deep)
+            scanState = ScanState.Running(0, "Preparing folder scanner", false)
             screen = Screen.FILE_RESULTS
 
             try {
@@ -86,7 +86,7 @@ class BrutusViewModel : ViewModel() {
                     treeUri = treeUri,
                     deep = deep,
                     onProgress = { scanned, name ->
-                        scanState = ScanState.Running(scanned, name, deep)
+                        scanState = ScanState.Running(scanned, name, false)
                     }
                 )
                 val summary = ScanSummary(
@@ -97,7 +97,7 @@ class BrutusViewModel : ViewModel() {
                 )
                 scanState = ScanState.Finished(summary, findings)
                 addHistory(
-                    title = if (deep) "Deep scan" else "Quick scan",
+                    title = if (deep) "Recursive folder scan" else "Quick folder scan",
                     detail = "$count files checked, ${findings.size} flagged",
                     risk = when {
                         summary.dangerousCount > 0 -> RiskLevel.DANGEROUS
@@ -110,6 +110,45 @@ class BrutusViewModel : ViewModel() {
                 bannerMessage = "Scan stopped."
             } catch (error: Throwable) {
                 scanState = ScanState.Failed(error.message ?: "The scan could not be completed.")
+            }
+        }
+    }
+
+    fun runDeepScan(context: Context) {
+        scanJob?.cancel()
+        scanJob = viewModelScope.launch {
+            val started = System.currentTimeMillis()
+            scanState = ScanState.Running(0, "Preparing full shared-storage scan", true)
+            screen = Screen.FILE_RESULTS
+
+            try {
+                val (count, findings) = FileSecurityEngine.scanDevice(
+                    context = context,
+                    onProgress = { scanned, name ->
+                        scanState = ScanState.Running(scanned, name, true)
+                    }
+                )
+                val summary = ScanSummary(
+                    scannedCount = count,
+                    flaggedCount = findings.size,
+                    dangerousCount = findings.count { it.riskLevel == RiskLevel.DANGEROUS },
+                    elapsedMillis = System.currentTimeMillis() - started
+                )
+                scanState = ScanState.Finished(summary, findings)
+                addHistory(
+                    title = "Full deep scan",
+                    detail = "$count files checked across shared storage, ${findings.size} flagged",
+                    risk = when {
+                        summary.dangerousCount > 0 -> RiskLevel.DANGEROUS
+                        summary.flaggedCount > 0 -> RiskLevel.CAUTION
+                        else -> RiskLevel.CLEAR
+                    }
+                )
+            } catch (_: CancellationException) {
+                scanState = ScanState.Idle
+                bannerMessage = "Deep scan stopped."
+            } catch (error: Throwable) {
+                scanState = ScanState.Failed(error.message ?: "The deep scan could not be completed.")
             }
         }
     }
