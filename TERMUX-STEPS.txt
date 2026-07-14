@@ -1,0 +1,42 @@
+BRUTUS SHIELD — PHONE-ONLY STARTUP
+
+FIRST: Download BrutusShield_Source_v0.1.0.zip from ChatGPT into the phone's Download folder.
+
+AT THE TERMUX $ PROMPT, RUN ONE BLOCK AT A TIME:
+
+1) Allow Termux to see Downloads:
+termux-setup-storage
+
+Tap ALLOW when Android asks.
+
+2) Install the small tools needed to unpack and upload:
+pkg update -y && pkg install unzip git gh -y
+
+3) Unpack the project into Termux home:
+rm -rf ~/BrutusShield
+mkdir -p ~/BrutusShield
+unzip ~/storage/downloads/BrutusShield_Source_v0.1.0.zip -d ~/BrutusShield
+cd ~/BrutusShield/BrutusShield
+
+4) Sign into GitHub from Termux:
+gh auth login
+
+Choose:
+GitHub.com
+HTTPS
+Login with a web browser
+
+5) Create the GitHub repository and upload everything:
+git init
+git branch -M main
+git config user.name "Hugh Mongus"
+git config user.email "YOUR_GITHUB_EMAIL"
+git add .
+git commit -m "Initial Brutus Shield MVP"
+gh repo create BrutusShield --public --source=. --remote=origin --push
+
+6) Open the repository page shown by Termux. Tap Actions, then Build Brutus Shield APK.
+The first push starts the APK build automatically.
+
+NOTE:
+Do not run the native Android build directly in Termux. The included GitHub Actions workflow builds it on a proper Android cloud runner and returns an installable APK.

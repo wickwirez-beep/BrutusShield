@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BrutusShield" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/brutus_black</item>
+        <item name="android:navigationBarColor">@color/brutus_black</item>
+        <item name="android:windowBackground">@color/brutus_black</item>
+    </style>
+
+    <style name="Theme.BrutusShield.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/brutus_black</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.BrutusShield</item>
+    </style>
+</resources>
