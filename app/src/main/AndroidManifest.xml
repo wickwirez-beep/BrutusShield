@@ -30,6 +30,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-    </application>
+    
+        <!-- Brutus Shield v0.4 deep installed-app scanner -->
+        <activity
+            android:name=".security.DeepAppScanActivity"
+            android:exported="true"
+            android:label="Brutus Deep Scan">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+</application>
 
 </manifest>
