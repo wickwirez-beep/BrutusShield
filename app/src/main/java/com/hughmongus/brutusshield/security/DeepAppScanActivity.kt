@@ -50,6 +50,7 @@ class DeepAppScanActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        actionBar?.hide()
         voice = TextToSpeech(this, this)
 
         setContent {
@@ -140,7 +141,7 @@ class DeepAppScanActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     onSpeak(
                         when {
                             dangerousCount > 0 ->
-                                "Deep scan complete. $dangerousCount high confidence threat findings require immediate review."
+                                "Deep scan complete. $dangerousCount exact known-malware hash matches require immediate review."
                             reviewCount > 0 ->
                                 "Deep scan complete. $reviewCount applications require review."
                             else ->
@@ -299,6 +300,16 @@ private fun DeepAppScanScreen(
             style = MaterialTheme.typography.bodyMedium,
         )
 
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text =
+                "Static indicators are clues, not proof of malware. " +
+                    "DANGEROUS requires an exact known-malware hash.",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+
         Spacer(modifier = Modifier.height(12.dp))
 
         Button(
@@ -421,7 +432,7 @@ private fun ScanSummary(
             Text(text = "${results.size} applications inspected")
             Text(
                 text =
-                    "$dangerous dangerous · " +
+                    "$dangerous confirmed-hash · " +
                         "$suspicious suspicious · " +
                         "$caution review",
             )

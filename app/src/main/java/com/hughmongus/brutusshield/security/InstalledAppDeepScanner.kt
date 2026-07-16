@@ -234,11 +234,13 @@ class InstalledAppDeepScanner(
         }
 
         val riskLevel = when {
+            // Heuristics recommend review; only an exact known-bad hash
+            // produces a confirmed dangerous verdict.
             hasExactBadHash -> DeepAppRiskLevel.DANGEROUS
-            score >= 75 && highConfidenceCount >= 2 -> DeepAppRiskLevel.DANGEROUS
-            score >= 45 -> DeepAppRiskLevel.SUSPICIOUS
-            score >= 20 -> DeepAppRiskLevel.CAUTION
-            score >= 8 -> DeepAppRiskLevel.LOW
+            score >= 70 && highConfidenceCount >= 2 ->
+                DeepAppRiskLevel.SUSPICIOUS
+            score >= 35 -> DeepAppRiskLevel.CAUTION
+            score >= 12 -> DeepAppRiskLevel.LOW
             else -> DeepAppRiskLevel.SAFE
         }
 
@@ -284,23 +286,30 @@ class InstalledAppDeepScanner(
         targetSdk: Int,
         cleartextAllowed: Boolean,
     ) {
-        fun permission(name: String) = name in permissions
+        fun requested(name: String) = name in permissions
+        fun granted(name: String) =
+            packageManager.checkPermission(
+                name,
+                packageInfo.packageName,
+            ) == PackageManager.PERMISSION_GRANTED
         fun binding(name: String) = name in bindings
 
-        val hasInternet = permission("android.permission.INTERNET")
-        val hasOverlay = permission("android.permission.SYSTEM_ALERT_WINDOW")
-        val canInstall = permission("android.permission.REQUEST_INSTALL_PACKAGES")
-        val readSms = permission("android.permission.READ_SMS")
-        val sendSms = permission("android.permission.SEND_SMS")
-        val receiveSms = permission("android.permission.RECEIVE_SMS")
-        val readContacts = permission("android.permission.READ_CONTACTS")
-        val readCallLog = permission("android.permission.READ_CALL_LOG")
-        val mic = permission("android.permission.RECORD_AUDIO")
-        val camera = permission("android.permission.CAMERA")
-        val fineLocation = permission("android.permission.ACCESS_FINE_LOCATION")
+        val hasInternet = requested("android.permission.INTERNET")
+        val hasOverlay = requested("android.permission.SYSTEM_ALERT_WINDOW")
+        val canInstall =
+            requested("android.permission.REQUEST_INSTALL_PACKAGES")
+        val readSms = granted("android.permission.READ_SMS")
+        val sendSms = granted("android.permission.SEND_SMS")
+        val receiveSms = granted("android.permission.RECEIVE_SMS")
+        val readContacts = granted("android.permission.READ_CONTACTS")
+        val readCallLog = granted("android.permission.READ_CALL_LOG")
+        val mic = granted("android.permission.RECORD_AUDIO")
+        val camera = granted("android.permission.CAMERA")
+        val fineLocation =
+            granted("android.permission.ACCESS_FINE_LOCATION")
         val backgroundLocation =
-            permission("android.permission.ACCESS_BACKGROUND_LOCATION")
-        val boot = permission("android.permission.RECEIVE_BOOT_COMPLETED")
+            granted("android.permission.ACCESS_BACKGROUND_LOCATION")
+        val boot = requested("android.permission.RECEIVE_BOOT_COMPLETED")
 
         val accessibility =
             binding("android.permission.BIND_ACCESSIBILITY_SERVICE")
@@ -607,62 +616,60 @@ class InstalledAppDeepScanner(
         ) {
             findings += finding(
                 "DYNAMIC_CODE_EXECUTION_COMBO",
-                "Dynamic code loading plus command execution",
-                "Indicators for loading code dynamically and executing system commands.",
-                28,
-                DeepFindingConfidence.HIGH,
+                "Dynamic-loading and command-related strings",
+                "Static strings were found in the APK. This does not prove that commands were executed.",
+                4,
+                DeepFindingConfidence.LOW,
             )
         } else if (has("dexclassloader")) {
             findings += finding(
                 "DYNAMIC_CODE_LOADING",
-                "Dynamic code loading",
-                "Legitimate plugin frameworks can also load code dynamically.",
-                7,
-                DeepFindingConfidence.MEDIUM,
+                "Dynamic code-loading string",
+                "Common in plugin frameworks, large apps, and bundled libraries.",
+                2,
+                DeepFindingConfidence.LOW,
             )
         }
 
         if (has("/system/bin/su") || has("magisk") || has("chmod 777")) {
             findings += finding(
                 "ROOT_TOOLING_INDICATORS",
-                "Root or privilege tooling indicators",
+                "Root-related code strings",
                 matches.filter {
                     it in setOf("/system/bin/su", "magisk", "chmod 777")
                 }.joinToString(),
-                12,
-                DeepFindingConfidence.MEDIUM,
+                1,
+                DeepFindingConfidence.LOW,
             )
         }
 
         if (has("xmrig") || has("stratum+tcp") || has("cryptonight")) {
             findings += finding(
                 "CRYPTOMINER_INDICATORS",
-                "Cryptocurrency miner indicators",
-                matches.filter {
-                    it in setOf("xmrig", "stratum+tcp", "cryptonight")
-                }.joinToString(),
-                30,
-                DeepFindingConfidence.HIGH,
+                "Cryptocurrency-miner strings",
+                "Mining-related strings were found, but static strings alone are not proof of mining.",
+                12,
+                DeepFindingConfidence.MEDIUM,
             )
         }
 
         if (has("keylog") && has("accessibilityservice")) {
             findings += finding(
                 "KEYLOGGER_INDICATORS",
-                "Possible keylogging behavior",
-                "Both keylogging and accessibility indicators were found.",
-                30,
-                DeepFindingConfidence.HIGH,
+                "Keylogging-related strings",
+                "Static keylogging and accessibility strings were found. Review is recommended.",
+                12,
+                DeepFindingConfidence.MEDIUM,
             )
         }
 
         if (has("mediaprojectionmanager") && has("accessibilityservice")) {
             findings += finding(
                 "SCREEN_CAPTURE_ACCESSIBILITY",
-                "Screen capture plus accessibility indicators",
-                "Could observe and interact with screen content after permission grants.",
-                14,
-                DeepFindingConfidence.MEDIUM,
+                "Screen-capture and accessibility strings",
+                "These strings may come from legitimate screen-sharing or support libraries.",
+                2,
+                DeepFindingConfidence.LOW,
             )
         }
     }
